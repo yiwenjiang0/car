@@ -1,4 +1,5 @@
 from gurobipy import *
+from constants import grid_with_border
 
 m = Model()
 m.setParam("LazyConstraints", 1)
@@ -12,23 +13,6 @@ def in_bounds(position):
 def neighbors(i, j):
     return list(filter(in_bounds, ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
 
-
-# grid form PLLP_R1
-grid = [
-    [1, 1, 1, 1, 0, 0, 0],
-    [1, 1, 1, 1, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 0],
-    [1, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0],
-]
-
-grid_with_border = (
-    [(len(grid[0]) + 2) * [1]]
-    + [[1] + row + [1] for row in grid]
-    + [(len(grid[0]) + 2) * [1]]
-)
 
 
 M = len(grid_with_border)
