@@ -2,7 +2,7 @@ from gurobipy import *
 
 from constants import grid, grid_with_border
 e = 7
-BIGINT = 10e9
+BIGINT = 10e6
 grid_with_border[0][e] = 0
 
 m = Model("Resolution 1")
@@ -12,8 +12,8 @@ N = len(grid)+1
 
 X = {(i, j): m.addVar(vtype=GRB.BINARY) for i in range(M+1) for j in range(N+1)}
 Y = {(i, j): m.addVar(vtype=GRB.BINARY) for i in range(M+1) for j in range(N+1)}
-fH = {(i, j): m.addVar() for i in range(M+1) for j in range(N+1)}
-fV = {(i,j ): m.addVar() for i in range(M+1) for j in range(N+1)}
+fH = {(i, j): m.addVar(lb=-BIGINT) for i in range(M+1) for j in range(N+1)}
+fV = {(i,j ): m.addVar(lb=-BIGINT) for i in range(M+1) for j in range(N+1)}
 absfH = {(i, j): m.addVar() for i in range(M+1) for j in range(N+1)}
 absfV = {(i,j ): m.addVar() for i in range(M+1) for j in range(N+1)}
 
