@@ -1,31 +1,32 @@
 from gurobipy import *
-from constants import grid_with_border
+from car.utl.constants import PLLP_R1_GRID_WITH_BORDER
+import grblogtools as glt
+import matplotlib.pyplot as plt
 
 m = Model()
 m.setParam("LazyConstraints", 1)
+m.setParam("LogFile", "log.txt")
 
 
 def in_bounds(position):
     i, j = position
-    return 0 <= i and i < M and 0 <= j and j < N
+    return 0 <= i < M and 0 <= j < N
 
 
 def neighbors(i, j):
     return list(filter(in_bounds, ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
 
 
-
-M = len(grid_with_border)
-N = len(grid_with_border[0])
+M = len(PLLP_R1_GRID_WITH_BORDER)
+N = len(PLLP_R1_GRID_WITH_BORDER[0])
 
 # col of entrance square
 e = 7
 # entrance square is a street field
-grid_with_border[0][e] = 0
+PLLP_R1_GRID_WITH_BORDER[0][e] = 0
 
 X = {(i, j): m.addVar(vtype=GRB.BINARY) for i in range(M) for j in range(N)}
 Y = {(i, j): m.addVar(vtype=GRB.BINARY) for i in range(M) for j in range(N)}
-
 
 m.setObjective(2 * quicksum(X[i, j] for i in range(M) for j in range(N)), GRB.MAXIMIZE)
 
@@ -41,7 +42,7 @@ connectParkingFields = {
 
 # 6) one type of field per square
 oneFieldPerSquare = {
-    (i, j): m.addConstr(X[i, j] + Y[i, j] + grid_with_border[i][j] <= 1)
+    (i, j): m.addConstr(X[i, j] + Y[i, j] + PLLP_R1_GRID_WITH_BORDER[i][j] <= 1)
     for i in range(M)
     for j in range(N)
 }
@@ -88,7 +89,6 @@ def callback(model, where):
         for i, j in region:
             region_neighbors |= set(neighbors(i, j))
 
-        print(region_neighbors)
         region_neighbors -= region
 
         for i, j in region:
@@ -99,13 +99,19 @@ m.optimize(callback)
 
 for i in range(M):
     for j in range(N):
-        square = " "
+        square = "."
         if X[i, j].x > 0.9:
             # parking
-            square = "@"
+            square = "P"
         elif Y[i, j].x > 0.9:
             # street
-            square = "."
+            square = "D"
 
         print(square, end="")
     print()
+
+summary, timelines, rootlp = glt.get_dataframe(["log.txt"], timelines=True)
+timelines = timelines.fillna(0)
+
+fig, ax = plt.subplots()
+ax.plot(timelines.index, timelines.Gap)

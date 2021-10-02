@@ -1,5 +1,4 @@
-# grid form PLLP_R1
-grid = [
+PLLP_R1_GRID = [
     [1, 1, 1, 1, 0, 0, 0],
     [1, 1, 1, 1, 0, 0, 0],
     [1, 1, 0, 0, 0, 0, 0],
@@ -9,8 +8,8 @@ grid = [
     [0, 0, 0, 0, 0, 0, 0],
 ]
 
-grid_with_border = (
-    [(len(grid[0]) + 2) * [1]]
-    + [[1] + row + [1] for row in grid]
-    + [(len(grid[0]) + 2) * [1]]
+PLLP_R1_GRID_WITH_BORDER = (
+        [(len(PLLP_R1_GRID[0]) + 2) * [1]]
+        + [[1] + row + [1] for row in PLLP_R1_GRID]
+        + [(len(PLLP_R1_GRID[0]) + 2) * [1]]
 )
