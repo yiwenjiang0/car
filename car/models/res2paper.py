@@ -1,13 +1,11 @@
 from gurobipy import *
 from enum import Enum, auto
-from car.utl.constants import PLLP_R2_GRID, add_border
+from car.utl.constants import PLLP_R2_GRID, add_border, PLLP_R2_GRID_WITH_BORDER
 
 
 # index 0 of the grid starts at index OFFSET on grid_with_border
 # (different from the paper by -1 since the paper uses 1-based indexing)
 OFFSET = 3
-grid_with_border = add_border(PLLP_R2_GRID, OFFSET)
-
 
 M = len(PLLP_R2_GRID[0])
 N = len(PLLP_R2_GRID)
@@ -16,12 +14,6 @@ N = len(PLLP_R2_GRID)
 e = 12
 
 BIGINT = 10e4
-
-# set entrance squares
-grid_with_border[OFFSET - 1][e + OFFSET] = 0
-grid_with_border[OFFSET - 2][e + OFFSET] = 0
-grid_with_border[OFFSET - 1][e + OFFSET + 1] = 0
-grid_with_border[OFFSET - 2][e + OFFSET + 1] = 0
 
 
 def in_bounds(position):
@@ -45,7 +37,7 @@ PLIO = [(i, j) for (i, j) in PLI if ((i+j) % 2 == 1)]
 
 # flow variables are bounded by the number of unblocked diagonal squares
 # TODO: not sure but seems correct?
-BOUND = sum(1-grid_with_border[i+OFFSET][j+OFFSET] for i, j in PLFE)
+BOUND = sum(1-PLLP_R2_GRID_WITH_BORDER[i+OFFSET][j+OFFSET] for i, j in PLFE)
 
 
 class Directions(Enum):
@@ -98,7 +90,7 @@ for i, j in PLIE:
     m.addConstr(quicksum(X[d, i, j] for d in Directions)
                 + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
                            for jj in (j-1, j))
-                + grid_with_border[i + OFFSET][j + OFFSET] <= 1)
+                + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
 # (33)
 for i, j in PLIO:
     m.addConstr(X[Directions.RIGHT, i, j-1]
@@ -107,7 +99,7 @@ for i, j in PLIO:
                 + X[Directions.UP, i+1, j]
                 + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
                            for jj in (j-1, j))
-                + grid_with_border[i + OFFSET][j + OFFSET] <= 1)
+                + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
 
 # (34, 35)
 for i, j in PLFE:
@@ -147,7 +139,7 @@ m.optimize()
 for i in range(M+1):
     for j in range(N+1):
         square = "P"
-        if grid_with_border[i + OFFSET][j + OFFSET] > 0.9:
+        if PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] > 0.9:
             # border / blocked
             square = "."
         elif Y[i, j].x > 0.9:
