@@ -64,7 +64,7 @@ m.setObjective(quicksum(X[(d, *pos)]
                for pos in PLIE for d in Directions), GRB.MAXIMIZE)
 
 # (21) frame contains four street fields
-m.addConstr(4 == quicksum(Y[pos]for pos in PLF)
+m.addConstr(2 == quicksum(Y[pos]for pos in PLF)
             - quicksum(Y[pos] for pos in PLI))
 
 # (22) no parking fields in the frame
@@ -72,7 +72,7 @@ m.addConstr(0 == quicksum(X[(d, *pos)] for pos in PLFE for d in Directions)
             - quicksum(X[(d, *pos)] for pos in PLIE for d in Directions))
 
 # (24) define entrance squares in border
-m.addConstr(quicksum(Y[i, j] for i in range(-2, 2) for j in (e, e+1)) == 8)
+m.addConstr(quicksum(Y[i, e] for i in range(-2, 1)) == 3)
 
 # (28 - 31) connect parking fields with driving lane
 for i, j in PLIE:
@@ -94,7 +94,7 @@ for i, j in PLIE:
 # (33)
 for i, j in PLIO:
     m.addConstr(X[Directions.RIGHT, i, j-1]
-                + X[Directions.LEFT, i-1, j]
+                + X[Directions.LEFT, i, j+1]
                 + X[Directions.DOWN, i-1, j]
                 + X[Directions.UP, i+1, j]
                 + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
@@ -127,22 +127,17 @@ for i, j in PLIO:
     m.addConstr(Y[i, j] <= fU[i+1, j] + fD[i+1, j] - fU[i+2, j-1] - fD[i, j-1])
 
 
-# outgoing flow is bounded by number of flow squares
-# TODO: (seems correct but not sure)
-m.addConstr(-fU[-2, e] <= quicksum(Y[i, j] for i, j in PLFE if (i+j) % 2 == 0))
-
 # result of r1 solution
 m.setParam("Cutoff", 38)
 # m.setParam("MIPFocus", 1)
 m.optimize()
-
-for i in range(M+1):
-    for j in range(N+1):
+for i in range(M):
+    for j in range(N):
         square = "P"
         if PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] > 0.9:
             # border / blocked
             square = "."
-        elif Y[i, j].x > 0.9:
+        elif Y[i, j].x + Y[i, j-1].x + Y[i-1, j].x + Y[i-1, j-1] > 0.9:
             # street
             square = "D"
 
