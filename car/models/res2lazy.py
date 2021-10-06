@@ -54,11 +54,6 @@ X = {(direction, *pos): m.addVar(vtype=GRB.BINARY)
      for direction in Directions}
 Y = {pos: m.addVar(vtype=GRB.BINARY) for pos in PLF}
 
-# flow to or from upper right neighbor
-fU = {pos: m.addVar(lb=-BOUND, ub=BOUND) for pos in PLFE}
-# flow to or from the lower right neighbour
-fD = {pos: m.addVar(lb=-BOUND, ub=BOUND) for pos in PLFE}
-
 
 m.setObjective(quicksum(X[(d, *pos)]
                for pos in PLIE for d in Directions), GRB.MAXIMIZE)
@@ -75,6 +70,7 @@ for (i, j) in PLIE:
         m.addConstr(X[Directions.DOWN, i, j] == 0)
     if j == N-1:
         m.addConstr(X[Directions.RIGHT, i, j] == 0)
+
 
 # (22) no parking fields in the frame
 m.addConstr(0 == quicksum(X[(d, *pos)] for pos in PLFE for d in Directions)
@@ -110,48 +106,68 @@ for i, j in PLIO:
                            for jj in (j-1, j))
                 + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
 
-# (34, 35)
-for i, j in PLFE:
-    m.addConstr(fD[i, j] <= BIGINT * Y[i, j])
-    m.addConstr(-fD[i, j] <= BIGINT * Y[i, j])
 
-    if i >= -2:
-        m.addConstr(fU[i, j] <= BIGINT * Y[i-1, j])
-        m.addConstr(-fU[i, j] <= BIGINT * Y[i-1, j])
+def neighbors(i, j):
+    return list(filter(in_bounds, ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
 
-# (36 - 39) connectivity of street fields by network flow
-for i, j in PLIE:
-    m.addConstr(fU[i, j] <= BIGINT * (Y[i-2, j] + Y[i-1, j+1]))
-    m.addConstr(fD[i, j] <= BIGINT * (Y[i+1, j] + Y[i, j+1]))
-    m.addConstr(-fU[i, j] <= BIGINT * (Y[i-1, j-1] + Y[i, j]))
-    m.addConstr(-fD[i, j] <= BIGINT * (Y[i-1, j] + Y[i, j-1]))
 
-# (40 - 43) directing flow to entrance and exit
-for i, j in PLIE:
-    m.addConstr(Y[i, j] <= fU[i, j] + fD[i, j] - fU[i+1, j-1] - fD[i-1, j-1])
-    m.addConstr(Y[i, j] <= fU[i+1, j+1] + fD[i+1, j+1] - fU[i+2, j] - fD[i, j])
+def find_contiguous(i, j, grid):
+    tset = {(i, j)}
+    grid[i][j] = -1
+    for (ii, jj) in neighbors(i, j):
+        if grid[ii][jj] == 1:
+            tset |= find_contiguous(ii, jj, grid)
 
-for i, j in PLIO:
-    m.addConstr(Y[i, j] <= fU[i, j+1] + fD[i, j+1] - fU[i+1, j] - fD[i-1, j])
-    m.addConstr(Y[i, j] <= fU[i+1, j] + fD[i+1, j] - fU[i+2, j-1] - fD[i, j-1])
+    return tset
+
+
+def callback(model, where):
+    if where != GRB.Callback.MIPSOL:
+        return
+
+    YV = model.cbGetSolution(Y)
+    # 1 for street, -1 for visited, 0 otherwise
+    grid = [[int(YV[i, j] >= 0.9) for j in range(N)] for i in range(M)]
+
+    regions = []
+    for i in range(M):
+        for j in range(N):
+            if grid[i][j] == 1:
+                regions.append(find_contiguous(i, j, grid))
+
+    if len(regions) == 1:
+        # no disconnected regions
+        return
+
+    for region in regions:
+        region_neighbors = set()
+        for i, j in region:
+            region_neighbors |= set(neighbors(i, j))
+
+        # print(region_neighbors)
+        region_neighbors -= region
+
+        for i, j in region:
+            model.cbLazy(Y[i, j] <= quicksum(Y[ii, jj]
+                         for ii, jj in region_neighbors))
 
 
 # result of r1 solution
 m.setParam("Cutoff", 38)
+m.setParam("LazyConstraints", 1)
+m.setParam("BranchDir", 1)
 # m.setParam("MIPFocus", 1)
-m.optimize()
+m.optimize(callback)
+
 for i in range(M):
     for j in range(N):
-        square = "."
-        if Y[i, j].x + Y[i, j-1].x + Y[i-1, j].x + Y[i-1, j-1].x > 0.9:
+        square = "P"
+        if PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] > 0.9:
+            # border / blocked
+            square = "."
+        elif Y[i, j].x + Y[i, j-1].x + Y[i-1, j].x + Y[i-1, j-1].x > 0.9:
             # street
             square = "D"
-        elif (i, j) in PLIO and 0.9 < (X[Directions.RIGHT, i, j-1].x
-                                       + X[Directions.LEFT, i, j+1].x
-                                       + X[Directions.DOWN, i-1, j].x
-                                       + X[Directions.UP, i+1, j].x):
-            square = "P"
-        elif (i, j) in PLIE and sum(X[d, i, j].x for d in Directions) > 0.9:
-            square = "P"
+
         print(square, end="")
     print()
