@@ -1,173 +1,180 @@
 from gurobipy import *
-from enum import Enum, auto
-from car.utl.constants import PLLP_R2_GRID, add_border, PLLP_R2_GRID_WITH_BORDER
-
-
-# index 0 of the grid starts at index OFFSET on grid_with_border
-# (different from the paper by -1 since the paper uses 1-based indexing)
-OFFSET = 3
+from car.utl.constants import PLLP_R2_GRID
 
 M = len(PLLP_R2_GRID[0])
 N = len(PLLP_R2_GRID)
 
-# position of left entrance square on the grid
-e = 12
-
-BIGINT = 10e4
+E = 12
 
 
 def in_bounds(position):
-    i, j = position
-    return 0 <= i and i < M and 0 <= j and j < N
-
-
-# positions are relative to the grid (without border) using 0-based indexing
-
-# set of squares including border
-PLF = [(i, j) for i in range(-OFFSET, M+OFFSET)
-       for j in range(-OFFSET, N+OFFSET)]
-# set of squares including border
-PLI = [pos for pos in PLF if in_bounds(pos)]
-# set of squares on even diagonals
-PLFE = [(i, j) for (i, j) in PLF if ((i + j) % 2 == 0)]
-# set of squares on even diagonals, not in the border
-PLIE = [pos for pos in PLFE if in_bounds(pos)]
-# set of squares on odd diagonals, not in the border
-PLIO = [(i, j) for (i, j) in PLI if ((i+j) % 2 == 1)]
-
-# flow variables are bounded by the number of unblocked diagonal squares
-# TODO: not sure but seems correct?
-BOUND = sum(1-PLLP_R2_GRID_WITH_BORDER[i+OFFSET][j+OFFSET] for i, j in PLFE)
-
-
-class Directions(Enum):
-    UP = auto()
-    DOWN = auto()
-    LEFT = auto()
-    RIGHT = auto()
-
-
-m = Model("res2 flow model")
-
-X = {(direction, *pos): m.addVar(vtype=GRB.BINARY)
-     for pos in PLFE
-     for direction in Directions}
-Y = {pos: m.addVar(vtype=GRB.BINARY) for pos in PLF}
-
-
-m.setObjective(quicksum(X[(d, *pos)]
-               for pos in PLIE for d in Directions), GRB.MAXIMIZE)
-
-# (21) frame contains four street fields
-# edited to also count the last col and row
-m.addConstr(2 == quicksum(Y[pos]for pos in PLF)
-            - quicksum(Y[i, j] for i, j in PLI if i != M-1 and j != N-1))
-
-
-# no down parking in the last row and no right parking in the last col
-for (i, j) in PLIE:
-    if i == M-1:
-        m.addConstr(X[Directions.DOWN, i, j] == 0)
-    if j == N-1:
-        m.addConstr(X[Directions.RIGHT, i, j] == 0)
-
-
-# (22) no parking fields in the frame
-m.addConstr(0 == quicksum(X[(d, *pos)] for pos in PLFE for d in Directions)
-            - quicksum(X[(d, *pos)] for pos in PLIE for d in Directions))
-
-# (24) define entrance squares in border
-m.addConstr(quicksum(Y[i, e] for i in range(-2, 1)) == 3)
-
-# (28 - 31) connect parking fields with driving lane
-for i, j in PLIE:
-    m.addConstr(X[Directions.LEFT, i, j]
-                <= Y[i-1, j-3] + Y[i, j-3] + Y[i-1, j+1] + Y[i, j+1])
-    m.addConstr(X[Directions.RIGHT, i, j]
-                <= Y[i-1, j-2] + Y[i, j-2] + Y[i-1, j+2] + Y[i, j+2])
-    m.addConstr(X[Directions.UP, i, j]
-                <= Y[i-3, j-1] + Y[i-3, j] + Y[i+1, j-1] + Y[i+1, j])
-    m.addConstr(X[Directions.DOWN, i, j]
-                <= Y[i-2, j-1] + Y[i-2, j] + Y[i+2, j-1] + Y[i+2, j])
-
-# (32) single purpose for each square
-for i, j in PLIE:
-    m.addConstr(quicksum(X[d, i, j] for d in Directions)
-                + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
-                           for jj in (j-1, j))
-                + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
-# (33)
-for i, j in PLIO:
-    m.addConstr(X[Directions.RIGHT, i, j-1]
-                + X[Directions.LEFT, i, j+1]
-                + X[Directions.DOWN, i-1, j]
-                + X[Directions.UP, i+1, j]
-                + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
-                           for jj in (j-1, j))
-                + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
-
+        i, j = position
+        return 0 <= i < M and 0 <= j < N
 
 def neighbors(i, j):
     return list(filter(in_bounds, ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
 
 
-def find_contiguous(i, j, grid):
-    tset = {(i, j)}
-    grid[i][j] = -1
-    for (ii, jj) in neighbors(i, j):
-        if grid[ii][jj] == 1:
-            tset |= find_contiguous(ii, jj, grid)
+def dneighbors(i, j):
+    res = set()
+    for d in D:
+        for n in neighbors(i,j):
+            if n in d and (i,j) not in d:
+                res.add(d)
+                
+    return list(res)
+
+def dneighborsd(din):
+    res = set()
+    (a1, a2), (b1, b2), (c1, c2), (d1, d2) = din
+    res.add(((a1, a2+2), (b1, b2+2), (c1, c2+2), (d1, d2+2)))
+    res.add(((a1, a2-2), (b1, b2-2), (c1, c2-2), (d1, d2-2)))
+    res.add(((a1+2, a2), (b1+2, b2), (c1+2, c2), (d1+2, d2)))
+    res.add(((a1-2, a2), (b1-2, b2), (c1-2, c2), (d1-2, d2)))
+        
+    res2 = res.copy()
+    for d in res:
+        for i, j in d:
+            if not in_bounds((i,j)) and d in res2:
+                res2.remove(d)
+                
+    return list(res2)
+
+def dneighborsp(pfield):
+    res = set()
+    for dcur in D:
+        for i, j in pfield:
+            for n in neighbors(i,j):
+                if n in dcur:
+                    res.add(dcur)
+    return list(res)
+
+# COLUMN GENERATION
+def GenerateParkingFields():
+    P = []
+    for i in range(N - 1):
+        for j in range(M - 1):
+            P.append(((i, j), (i+1, j)))
+            P.append(((i, j), (i, j+1)))
+    return P
+
+def GenerateDrivingFields():
+    D = []
+    for i in range(N - 1):
+        for j in range(M - 1):
+            current = (i,j), (i,j+1), (i+1,j), (i+1,j+1)
+            D.append(current)
+            
+            if j == E and i == 0:
+                e = current
+    return D, e
+
+P = GenerateParkingFields()
+D, e = GenerateDrivingFields()
+
+_p = {(i, j, p):
+     1 if (i, j) in p else 0
+     for i in range(N) for j in range(M) for p in P}
+
+_d = {(i, j, d):
+     1 if (i, j) in d else 0
+     for i in range(N) for j in range(M) for d in D}
+    
+# END COLUMN GENERATION
+    
+m = Model()
+m.setParam("LazyConstraints", 1)
+m.setParam("LogFile", "res2lazy.txt")
+
+
+X = {p: 
+     m.addVar(vtype=GRB.BINARY) 
+     for p in P}
+    
+Y = {d:
+     m.addVar(vtype=GRB.BINARY)
+     for d in D}
+
+m.addConstr(Y[e] == 1)
+
+for i in range(N):
+    for j in range(M):
+        m.addConstr(quicksum(_p[i,j,p]*X[p] for p in P) <= 1)
+        
+for p in P:
+    m.addConstr(X[p]
+                <= quicksum(Y[d] for d in dneighborsp(p)))
+        
+for i in range(N):
+    for j in range(M):
+        m.addConstr(
+            quicksum(_p[i,j,p]*X[p] for p in P) +
+            quicksum(_d[i,j,d]*Y[d] for d in D) +
+            PLLP_R2_GRID[i][j] <= 1
+        )
+        
+for d in D:
+    m.addConstr(Y[d]
+                <= quicksum(Y[dd] for dd in dneighborsd(d)))
+
+m.setObjective(quicksum(X[p] for p in P), GRB.MAXIMIZE)
+
+     
+from pprint import pprint
+
+def find_contiguous(d, driving_fields):
+    tset = {d}
+    driving_fields.remove(d)
+    for dd in dneighborsd(d):
+        if dd in driving_fields:
+            tset |= find_contiguous(dd, driving_fields)
 
     return tset
-
 
 def callback(model, where):
     if where != GRB.Callback.MIPSOL:
         return
-
+    
     YV = model.cbGetSolution(Y)
-    # 1 for street, -1 for visited, 0 otherwise
-    grid = [[int(YV[i, j] >= 0.9) for j in range(N)] for i in range(M)]
-
+    
+    driving_fields = set()
+    for d in YV:
+        if YV[d] >= 0.9:
+            driving_fields.add(d)
+            
     regions = []
-    for i in range(M):
-        for j in range(N):
-            if grid[i][j] == 1:
-                regions.append(find_contiguous(i, j, grid))
-
+    for d in driving_fields.copy():
+        if d in driving_fields:
+            regions.append(find_contiguous(d, driving_fields))
+            
     if len(regions) == 1:
-        # no disconnected regions
         return
-
+            
     for region in regions:
         region_neighbors = set()
-        for i, j in region:
-            region_neighbors |= set(neighbors(i, j))
-
-        # print(region_neighbors)
+        for d in region:
+            region_neighbors |= set(dneighborsd(d))
+            
         region_neighbors -= region
+        
+        for d in region:
+            model.cbLazy(Y[d] <= quicksum(Y[dd] for dd in region_neighbors))
+            
 
-        for i, j in region:
-            model.cbLazy(Y[i, j] <= quicksum(Y[ii, jj]
-                         for ii, jj in region_neighbors))
-
-
-# result of r1 solution
-m.setParam("Cutoff", 38)
-m.setParam("LazyConstraints", 1)
-m.setParam("BranchDir", 1)
-# m.setParam("MIPFocus", 1)
 m.optimize(callback)
 
-for i in range(M):
-    for j in range(N):
-        square = "P"
-        if PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] > 0.9:
-            # border / blocked
-            square = "."
-        elif Y[i, j].x + Y[i, j-1].x + Y[i-1, j].x + Y[i-1, j-1].x > 0.9:
-            # street
-            square = "D"
+grid = [["." for i in range(N)] for j in range(M)]
+for d in D:
+    if Y[d].x > 0.9:
+        for i, j in d:
+            grid[i][j] = 'D'
 
-        print(square, end="")
-    print()
+total = 0
+for p in P:
+    if X[p].x > 0.9:
+        total += 1
+        for i,j in p:
+            grid[i][j] = 'P'
+
+pprint(grid)
+print(total, "total parking spaces")
