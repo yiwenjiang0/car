@@ -1,6 +1,25 @@
 from gurobipy import *
 import copy
 
+E = 12
+
+grid = [
+    [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+]
+
 
 def ResTwoLazy(grid, E, log_file=None):
     grid = copy.deepcopy(grid)
@@ -12,25 +31,14 @@ def ResTwoLazy(grid, E, log_file=None):
         i, j = position
         return 0 <= i < M and 0 <= j < N
 
-    def neighbors(i, j):
-        return list(filter(in_bounds, ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
-
-    def dneighbors(i, j):
-        res = set()
-        for d in D:
-            for n in neighbors(i, j):
-                if n in d and (i, j) not in d:
-                    res.add(d)
-
-        return list(res)
-
     def dneighborsd(din):
         res = set()
         (a1, a2), (b1, b2), (c1, c2), (d1, d2) = din
-        res.add(((a1, a2 + 2), (b1, b2 + 2), (c1, c2 + 2), (d1, d2 + 2)))
-        res.add(((a1, a2 - 2), (b1, b2 - 2), (c1, c2 - 2), (d1, d2 - 2)))
-        res.add(((a1 + 2, a2), (b1 + 2, b2), (c1 + 2, c2), (d1 + 2, d2)))
-        res.add(((a1 - 2, a2), (b1 - 2, b2), (c1 - 2, c2), (d1 - 2, d2)))
+
+        res.add(((a1, a2 + 1), (b1, b2 + 1), (c1, c2 + 1), (d1, d2 + 1)))
+        res.add(((a1, a2 - 1), (b1, b2 - 1), (c1, c2 - 1), (d1, d2 - 1)))
+        res.add(((a1 + 1, a2), (b1 + 1, b2), (c1 + 1, c2), (d1 + 1, d2)))
+        res.add(((a1 - 1, a2), (b1 - 1, b2), (c1 - 1, c2), (d1 - 1, d2)))
 
         res2 = res.copy()
         for d in res:
@@ -43,10 +51,17 @@ def ResTwoLazy(grid, E, log_file=None):
     def dneighborsp(pfield):
         res = set()
         for dcur in D:
-            for i, j in pfield:
-                for n in neighbors(i, j):
-                    if n in dcur:
-                        res.add(dcur)
+            vertical = pfield[0][0] != pfield[1][0]
+            if (vertical):
+                neighbors = ((pfield[0][0] - 1, pfield[0][1]),
+                             (pfield[1][0] + 1, pfield[1][1]))
+            else:
+                neighbors = ((pfield[0][0], pfield[0][1] - 1),
+                             (pfield[1][0], pfield[1][1] + 1))
+
+            for n in list(filter(in_bounds, neighbors)):
+                if n in dcur:
+                    res.add(dcur)
         return list(res)
 
     # COLUMN GENERATION
@@ -73,11 +88,11 @@ def ResTwoLazy(grid, E, log_file=None):
     D, e = GenerateDrivingFields()
 
     _p = {(i, j, p):
-              1 if (i, j) in p else 0
+          1 if (i, j) in p else 0
           for i in range(M) for j in range(N) for p in P}
 
     _d = {(i, j, d):
-              1 if (i, j) in d else 0
+          1 if (i, j) in d else 0
           for i in range(M) for j in range(N) for d in D}
 
     # END COLUMN GENERATION
@@ -87,11 +102,11 @@ def ResTwoLazy(grid, E, log_file=None):
     m.setParam("LogFile", "res2lazy.txt")
 
     X = {p:
-             m.addVar(vtype=GRB.BINARY)
+         m.addVar(vtype=GRB.BINARY)
          for p in P}
 
     Y = {d:
-             m.addVar(vtype=GRB.BINARY)
+         m.addVar(vtype=GRB.BINARY)
          for d in D}
 
     m.addConstr(Y[e] == 1)
@@ -108,7 +123,7 @@ def ResTwoLazy(grid, E, log_file=None):
         for j in range(N):
             m.addConstr(
                 quicksum(_p[i, j, p] * X[p] for p in P) +
-                quicksum(_d[i, j, d] * Y[d] for d in D) +
+                quicksum(0.25 * _d[i, j, d] * Y[d] for d in D) +
                 grid[i][j] <= 1
             )
 
@@ -117,8 +132,6 @@ def ResTwoLazy(grid, E, log_file=None):
                     <= quicksum(Y[dd] for dd in dneighborsd(d)))
 
     m.setObjective(quicksum(X[p] for p in P), GRB.MAXIMIZE)
-
-    from pprint import pprint
 
     def find_contiguous(d, driving_fields):
         tset = {d}
@@ -156,7 +169,8 @@ def ResTwoLazy(grid, E, log_file=None):
             region_neighbors -= region
 
             for d in region:
-                model.cbLazy(Y[d] <= quicksum(Y[dd] for dd in region_neighbors))
+                model.cbLazy(Y[d] <= quicksum(Y[dd]
+                             for dd in region_neighbors))
 
     m.optimize(callback)
 
@@ -170,5 +184,12 @@ def ResTwoLazy(grid, E, log_file=None):
         if Y[d].x > 0.9:
             for i, j in d:
                 grid[i][j] = 2
+
+    for row in grid:
+        for c in row:
+            if c < 0:
+                c = "#"
+            print(c, end="")
+        print("")
 
     return grid, m.objVal, m.Runtime
