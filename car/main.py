@@ -1,21 +1,13 @@
 from car.models.res1lazy import ResOneLazy
-from car.utl.constants import PLLP_R1_GRID_WITH_BORDER
+from car.models.res1paper import ResOnePaper
+from car.models.res2lazy import ResTwoLazy
 
-s = ResOneLazy("Resolution 1 (Lazy)", grid=PLLP_R1_GRID_WITH_BORDER)
-s.solve_model()
+from car.utl.constants import PLLP_R1_GRID, PLLP_R1_GRID_WITH_BORDER, PLLP_R2_GRID
 
-# while True:
-#     print(
-#         "Available Models:\n"
-#         "Resolution 1 (Paper) [R1P]\n"
-#         "Resolution 1 (Lazy Constraints) [R1L]\n"
-#     )
-#
-#     model = input("Choose a model: ")
-#
-#     if model.lower() == "r1p":
-#         break
-#     elif model.lower() == "r1l":
-#         break
-#     else:
-#         print("Invalid choice. Try again.\n")
+s = ResOneLazy(model_name="Res1Lazy", grid=PLLP_R1_GRID, entrance=6)
+# s = ResOnePaper(model_name="Res1Paper", grid=PLLP_R1_GRID_WITH_BORDER, entrance=6)
+# s = ResTwoLazy(model_name="Res2Lazy", grid=PLLP_R2_GRID, entrance=12)
+
+s.solve()
+
+print(s.get_optimized_solution())

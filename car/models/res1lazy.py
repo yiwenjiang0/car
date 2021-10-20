@@ -1,137 +1,138 @@
-from gurobipy import *
-import grblogtools as glt
-import matplotlib.pyplot as plt
-from pprint import pprint
+__all__ = ["ResOneLazy"]
+
+import gurobipy as gp
+
+from car.utl.helpers import in_bounds
+
 import copy
 
+from .base import BaseModel
 
-def ResOneLazy(grid, e, log_file=None):
-    """
-    Run the 5x5m resolution model with lazy constraints to enforce connectivity
-    of street fields.
 
-    Parameters:
-        grid (List[List[int]]): the grid with blocked squares indicated by a 1
-        e (int): the column of the entrance to the parking lot
-        log_file (Optional[str]): path for the log file of this solve
+def neighbors(i, j, grid):
+    return list(filter(lambda p: in_bounds(p, grid), ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
 
-    Returns:
-        (List[List[int]]): the resulting solution, with blocked squares indicated by a 1,
-             driving fields indicated by a 3, and unique parking,
-             spaces indicated with a unique negative number, otherwise 0
-        (int): the objective value, i.e. number of parking spaces in the result
-        (int) the runtime: how long the model took to solve
-    """
-    grid = copy.deepcopy(grid)
 
-    def in_bounds(position):
-        i, j = position
-        return 0 <= i < M and 0 <= j < N
+class ResOneLazy(BaseModel):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-    def neighbors(i, j):
-        return list(filter(in_bounds, ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1))))
+        self.m.setParam("LazyConstraints", 1)
 
-    m = Model()
+        self.num_lazy = 0
 
-    # GUROBI PARAMS
-    m.setParam("LazyConstraints", 1)
-    if log_file:
-        m.setParam("LogFile", log_file)
+        # VARIABLES
+        self.X = None
+        self.Y = None
 
-    M = len(grid)  # number of rows in the grid
-    N = len(grid[0])  # number of columns in the grid
+        # CONSTRAINTS
+        self.entranceAccessible = None
+        self.connectParkingFields = None
+        self.oneFieldPerSquare = None
+        self.streetConnected = None
 
-    # Entrance square must not be blocked
-    grid[0][e] = 0
+    def optimize(self):
+        rows, cols = range(len(self.grid)), range(len(self.grid[0]))
 
-    # VARIABLES
-    X = {(i, j): m.addVar(vtype=GRB.BINARY)
-         for i in range(M) for j in range(N)}
-    Y = {(i, j): m.addVar(vtype=GRB.BINARY)
-         for i in range(M) for j in range(N)}
+        def callback(model, where):
+            # callback to add the lazy constraint which enforces connectivity
+            # of street fields, to be passed to Gurobi
+            if where != gp.GRB.Callback.MIPSOL:
+                return
 
-    # CONSTRAINTS
-    # The entrance is connected to a driving field
-    m.addConstr(Y[0, e] + Y[1, e] == 2)
+            def find_contiguous(i, j, grid):
+                tset = {(i, j)}
+                grid[i][j] = -1
+                for (ii, jj) in neighbors(i, j, grid):
+                    if grid[ii][jj] == 1:
+                        tset |= find_contiguous(ii, jj, grid)
 
-    # Parking fields are accessible from driving fields
-    connectParkingFields = {
-        (i, j): m.addConstr(X[i, j] <= quicksum(Y[ii, jj] for ii, jj in neighbors(i, j)))
-        for i in range(1, M - 1)
-        for j in range(1, N - 1)
-    }
+                return tset
 
-    # Each grid cell serves at most one purpose
-    oneFieldPerSquare = {
-        (i, j): m.addConstr(X[i, j] + Y[i, j] + grid[i][j] <= 1)
-        for i in range(M)
-        for j in range(N)
-    }
+            YV = model.cbGetSolution(self.Y)
+            # 1 for street, -1 for visited, 0 otherwise
+            grid = [[int(YV[i, j] >= 0.9) for j in cols] for i in rows]
 
-    # Driving fields are connected to at least one other driving field
-    # NOTE: this restraint is redundant given the lazy constrain however
-    # including it reduces the solution space while retaining the optimal solution
-    streetConnected = {
-        (i, j): m.addConstr(Y[i, j] <= quicksum(Y[ii, jj] for ii, jj in neighbors(i, j)))
-        for i in range(1, M - 1)
-        for j in range(1, N - 1)
-    }
+            regions = []
+            for i in rows:
+                for j in cols:
+                    if grid[i][j] == 1:
+                        regions.append(find_contiguous(i, j, grid))
 
-    # OBJECTIVE
-    m.setObjective(2 * quicksum(X[i, j] for i in range(M)
-                   for j in range(N)), GRB.MAXIMIZE)
+            if len(regions) == 1:
+                # no disconnected regions in the solution
+                return
 
-    def callback(model, where):
-        # callback to add the lazy constraint which enforces connectivity
-        # of street fields, to be passed to Gurobi
-        if where != GRB.Callback.MIPSOL:
-            return
+            for region in regions:
+                region_neighbors = set()
+                for i, j in region:
+                    region_neighbors |= set(neighbors(i, j, grid))
 
-        def find_contiguous(i, j, grid):
-            tset = {(i, j)}
-            grid[i][j] = -1
-            for (ii, jj) in neighbors(i, j):
-                if grid[ii][jj] == 1:
-                    tset |= find_contiguous(ii, jj, grid)
+                region_neighbors -= region
 
-            return tset
+                for i, j in region:
+                    # Given the current disconnected region, we give the choice
+                    # to eliminate the region entirely or add at least one driving
+                    # field to the fields surrounding the region
+                    model.cbLazy(self.Y[i, j] <= gp.quicksum(self.Y[r, c]
+                                                             for r, c in region_neighbors))
+                    self.num_lazy += 1
 
-        YV = model.cbGetSolution(Y)
-        # 1 for street, -1 for visited, 0 otherwise
-        grid = [[int(YV[i, j] >= 0.9) for j in range(N)] for i in range(M)]
+        self.m.optimize(callback)
 
-        regions = []
-        for i in range(M):
-            for j in range(N):
-                if grid[i][j] == 1:
-                    regions.append(find_contiguous(i, j, grid))
+    def set_variables(self):
+        rows, cols = range(len(self.grid)), range(len(self.grid[0]))
 
-        if len(regions) == 1:
-            # no disconnected regions in the solution
-            return
+        self.X = {(i, j): self.m.addVar(vtype=gp.GRB.BINARY)
+                  for i in rows for j in cols}
 
-        for region in regions:
-            region_neighbors = set()
-            for i, j in region:
-                region_neighbors |= set(neighbors(i, j))
+        self.Y = {(i, j): self.m.addVar(vtype=gp.GRB.BINARY)
+                  for i in rows for j in cols}
 
-            region_neighbors -= region
+    def set_constraints(self):
+        rows, cols = range(len(self.grid)), range(len(self.grid[0]))
 
-            for i, j in region:
-                # Given the current disconneted region, we give the choice
-                # to eliminate the region entirely or add at least one driving
-                # field to the fields surrounding the region
-                model.cbLazy(Y[i, j] <= quicksum(Y[ii, jj]
-                             for ii, jj in region_neighbors))
+        self.entranceAccessible = self.Y[0, self.entrance] + self.Y[1, self.entrance] == 2
 
-    m.optimize(callback)
-    count = 1
-    for i in range(M):
-        for j in range(N):
-            if Y[i, j].x > 0.9:
-                grid[i][j] = 2
-            elif X[i, j].x > 0.9:
-                grid[i][j] = -count
-                count += 1
+        self.connectParkingFields = {
+            (i, j):
+                self.m.addConstr(self.X[i, j] <= gp.quicksum(self.Y[r, c] for r, c in neighbors(i, j, self.grid)))
+            for i in rows
+            for j in cols
+        }
 
-    return grid, m.objVal, m.Runtime
+        self.oneFieldPerSquare = {
+            (i, j): self.m.addConstr(self.X[i, j] + self.Y[i, j] + self.grid[i][j] <= 1)
+            for i in rows
+            for j in cols
+        }
+
+        self.streetConnected = {
+            (i, j): self.m.addConstr(self.Y[i, j] <= gp.quicksum(self.Y[r, c] for r, c in neighbors(i, j, self.grid)))
+            for i in rows
+            for j in cols
+        }
+
+    def set_objective(self):
+        rows, cols = range(len(self.grid)), range(len(self.grid[0]))
+
+        self.m.setObjective(2 * gp.quicksum(self.X[i, j] for i in rows
+                                            for j in cols), gp.GRB.MAXIMIZE)
+
+    def get_num_lazy(self):
+        return self.num_lazy
+
+    def get_optimized_solution(self):
+        rows, cols = range(len(self.grid)), range(len(self.grid[0]))
+
+        result = copy.deepcopy(self.grid)
+
+        for i in rows:
+            for j in cols:
+                if self.Y[i, j].x > 0.9:
+                    result[i][j] = '3'
+
+                if self.X[i, j].x > 0.9:
+                    result[i][j] = '2'
+
+        return result

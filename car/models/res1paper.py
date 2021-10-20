@@ -1,84 +1,116 @@
-from gurobipy import *
+__all__ = ["ResOnePaper"]
 
-from car.utl.helpers import add_border
-import grblogtools as glt
-import matplotlib.pyplot as plt
-from pprint import pprint
+import gurobipy as gp
 
-def ResOnePaper(grid, e):
-    BIGINT = 10e6
-    grid_with_border = add_border(grid, 1, e, 1)
-    grid_with_border[0][e] = 0
-    
-    m = Model("Resolution 1")
-    m.setParam("LogFile", "res1paper.txt")
-    
-    M = len(grid) + 1
-    N = len(grid[0]) + 1
-    
-    
-    X = {(i, j): m.addVar(vtype=GRB.BINARY) for i in range(M + 1) for j in range(N + 1)}
-    Y = {(i, j): m.addVar(vtype=GRB.BINARY) for i in range(M + 1) for j in range(N + 1)}
-    fH = {(i, j): m.addVar(lb=-BIGINT) for i in range(M + 1) for j in range(N + 1)}
-    fV = {(i, j): m.addVar(lb=-BIGINT) for i in range(M + 1) for j in range(N + 1)}
-    absfH = {(i, j): m.addVar() for i in range(M + 1) for j in range(N + 1)}
-    absfV = {(i, j): m.addVar() for i in range(M + 1) for j in range(N + 1)}
-    
-    for i in range(M + 1):
-        for j in range(N + 1):
-            m.addConstr(absfH[i, j] == abs_(fH[i, j]))
-            m.addConstr(absfV[i, j] == abs_(fV[i, j]))
-    
-    m.setObjective(2 * quicksum(X[i, j] for i in range(1, M) for j in range(1, N)), GRB.MAXIMIZE)
-    
-    # Definition of the frame
-    m.addConstr(2 == Y[0, e] + Y[1, e])  # Entrance is accessible
-    
-    m.addConstr(
-        1 == quicksum(X[i, j] + Y[i, j] for i in range(M + 1) for j in range(N + 1))
-        - quicksum(X[i, j] + Y[i, j] for i in range(1, M) for j in range(1, N))
-    )
-    
-    # Connection of parking fields with driving lanes
-    for i in range(1, M):
-        for j in range(1, N):
-            m.addConstr(X[i, j] <= Y[i - 1, j] + Y[i + 1, j] + Y[i, j - 1] + Y[i, j + 1])
-    
-    # Single purpose for each field
-    for i in range(M + 1):
-        for j in range(N + 1):
-            m.addConstr(1 >= grid_with_border[i][j] + X[i, j] + Y[i, j])
-    
-    # Connectivity of street fields
-    for i in range(M):
-        for j in range(N):
-            # Vertical flow is conserved
-            m.addConstr(absfV[i, j] <= BIGINT * Y[i, j])
-            m.addConstr(absfV[i, j] <= BIGINT * Y[i + 1, j])
-    
-            # Horizontal flow is conserved
-            m.addConstr(absfH[i, j] <= BIGINT * Y[i, j])
-            m.addConstr(absfH[i, j] <= BIGINT * Y[i, j + 1])
-    
-    for i in range(1, M):
-        for j in range(1, N):
-            m.addConstr(Y[i, j] <= fH[i, j] + fV[i, j] - fH[i, j - 1] - fV[i - 1, j])
-    
-    m.addConstr(-fV[0, e] <= quicksum(Y[i, j] for i in range(1, M) for j in range(1, N)))
-    
-    m.optimize()
-    
-    for i in range(M + 1):
-        for j in range(N + 1):
-            square = "."
-            if X[i, j].x > 0.9:
-                # parking
-                square = "P"
-            elif Y[i, j].x > 0.9:
-                # street
-                square = "D"
-    
-            print(square, end="")
-        print()
+from .base import BaseModel
 
-    print(M, N)
+import copy
+
+BIGINT = 10e6
+
+
+class ResOnePaper(BaseModel):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # VARIABLES
+        self.X = None
+        self.Y = None
+        self.fH = None
+        self.fV = None
+        self.absfH = None
+        self.absfV = None
+
+        # CONSTRAINTS
+        self.entranceAccessible = None
+        self.edgeIsDriving = None
+        self.parkingAccessible = None
+        self.mostOnePurpose = None
+        self.verticalFlowConserved1 = None
+        self.verticalFlowConserved2 = None
+        self.horizontalFlowConserved1 = None
+        self.horizontalFlowConserved2 = None
+        self.netFlow = None
+        self.entranceSinks = None
+
+    def set_variables(self):
+        M, N = len(self.grid), len(self.grid[0])
+
+        self.X = {(i, j): self.m.addVar(vtype=gp.GRB.BINARY) for i in range(M) for j in range(N)}
+        self.Y = {(i, j): self.m.addVar(vtype=gp.GRB.BINARY) for i in range(M) for j in range(N)}
+        self.fH = {(i, j): self.m.addVar(lb=-BIGINT) for i in range(M) for j in range(N)}
+        self.fV = {(i, j): self.m.addVar(lb=-BIGINT) for i in range(M) for j in range(N)}
+        self.absfH = {(i, j): self.m.addVar() for i in range(M) for j in range(N)}
+        self.absfV = {(i, j): self.m.addVar() for i in range(M) for j in range(N)}
+
+    def set_constraints(self):
+        M, N = len(self.grid), len(self.grid[0])
+
+        for i in range(M):
+            for j in range(N):
+                self.m.addConstr(self.absfH[i, j] == gp.abs_(self.fH[i, j]))
+                self.m.addConstr(self.absfV[i, j] == gp.abs_(self.fV[i, j]))
+
+        self.entranceAccessible = self.m.addConstr(2 == self.Y[0, self.entrance] + self.Y[1, self.entrance])
+
+        self.edgeIsDriving = self.m.addConstr(
+            1 == gp.quicksum(self.X[i, j] + self.Y[i, j] for i in range(M) for j in range(N))
+            - gp.quicksum(self.X[i, j] + self.Y[i, j] for i in range(1, M - 1) for j in range(1, N - 1))
+        )
+
+        self.parkingAccessible = {(i, j): self.m.addConstr(
+            self.X[i, j] <= self.Y[i - 1, j] + self.Y[i + 1, j] + self.Y[i, j - 1] + self.Y[i, j + 1])
+            for i in range(1, M - 1)
+            for j in range(1, N - 1)
+        }
+
+        self.mostOnePurpose = {(i, j): self.m.addConstr(1 >= self.grid[i][j] + self.X[i, j] + self.Y[i, j])
+                               for i in range(M)
+                               for j in range(N)
+                               }
+
+        self.verticalFlowConserved1 = {(i, j): self.m.addConstr(self.absfV[i, j] <= BIGINT * self.Y[i, j]) for i in
+                                       range(M - 1)
+                                       for j in range(N - 1)}
+
+        self.verticalFlowConserved2 = {(i, j): self.m.addConstr(self.absfV[i, j] <= BIGINT * self.Y[i + 1, j]) for i in
+                                       range(M - 1)
+                                       for j in range(N - 1)}
+
+        self.horizontalFlowConserved1 = {(i, j): self.m.addConstr(self.absfH[i, j] <= BIGINT * self.Y[i, j]) for i in
+                                         range(M - 1)
+                                         for j in range(N - 1)}
+
+        self.horizontalFlowConserved2 = {(i, j): self.m.addConstr(self.absfH[i, j] <= BIGINT * self.Y[i, j + 1]) for i
+                                         in range(M - 1)
+                                         for j in range(N - 1)}
+
+        self.netFlow = {(i, j): self.m.addConstr(
+            self.Y[i, j] <= self.fH[i, j] + self.fV[i, j] - self.fH[i, j - 1] - self.fV[i - 1, j]) for i in
+                        range(1, M - 1)
+                        for j in range(1, N - 1)}
+
+        self.entranceSinks = self.m.addConstr(-self.fV[0, self.entrance] <= gp.quicksum(
+            self.Y[i, j] for i in range(1, M - 1) for j in range(1, N - 1)))
+
+    def set_objective(self):
+        M, N = len(self.grid), len(self.grid[0])
+
+        self.m.setObjective(2 * gp.quicksum(self.X[i, j] for i in range(1, M - 1) for j in range(1, N - 1)),
+                            gp.GRB.MAXIMIZE)
+
+    def get_optimized_solution(self):
+        M, N = len(self.grid), len(self.grid[0])
+        result = [[0 for _ in range(1, M - 1)] for _ in range(1, N - 1)]
+
+        for i in range(1, M - 1):
+            for j in range(1, N - 1):
+                result[i - 1][j - 1] = self.grid[i][j]
+
+                if self.Y[i, j].x > 0.9:
+                    result[i - 1][j - 1] = '3'
+
+                if self.X[i, j].x > 0.9:
+                    result[i - 1][j - 1] = '2'
+
+        return result
