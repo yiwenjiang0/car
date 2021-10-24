@@ -1,45 +1,19 @@
 __all__ = []
 
-from gurobipy import *
+import gurobipy as gp
+from car.models.base import BaseModel
 from enum import Enum, auto
-from car.utl.constants import PLLP_R2_GRID, add_border, PLLP_R2_GRID_WITH_BORDER
 
+from car.utl.helpers import add_border
 
-# index 0 of the grid starts at index OFFSET on grid_with_border
-# (different from the paper by -1 since the paper uses 1-based indexing)
 OFFSET = 3
-
-M = len(PLLP_R2_GRID[0])
-N = len(PLLP_R2_GRID)
-
-# position of left entrance square on the grid
-e = 12
-
 BIGINT = 10e4
 
 
-def in_bounds(position):
+def in_bounds(position, grid):
+    M, N = len(grid[0]), len(grid)
     i, j = position
-    return 0 <= i and i < M and 0 <= j and j < N
-
-
-# positions are relative to the grid (without border) using 0-based indexing
-
-# set of squares including border
-PLF = [(i, j) for i in range(-OFFSET, M+OFFSET)
-       for j in range(-OFFSET, N+OFFSET)]
-# set of squares including border
-PLI = [pos for pos in PLF if in_bounds(pos)]
-# set of squares on even diagonals
-PLFE = [(i, j) for (i, j) in PLF if ((i + j) % 2 == 0)]
-# set of squares on even diagonals, not in the border
-PLIE = [pos for pos in PLFE if in_bounds(pos)]
-# set of squares on odd diagonals, not in the border
-PLIO = [(i, j) for (i, j) in PLI if ((i+j) % 2 == 1)]
-
-# flow variables are bounded by the number of unblocked diagonal squares
-# TODO: not sure but seems correct?
-BOUND = sum(1-PLLP_R2_GRID_WITH_BORDER[i+OFFSET][j+OFFSET] for i, j in PLFE)
+    return 0 <= i < M and 0 <= j < N
 
 
 class Directions(Enum):
@@ -49,111 +23,126 @@ class Directions(Enum):
     RIGHT = auto()
 
 
-m = Model("res2 flow model")
+class ResTwoPaper(BaseModel):
 
-X = {(direction, *pos): m.addVar(vtype=GRB.BINARY)
-     for pos in PLFE
-     for direction in Directions}
-Y = {pos: m.addVar(vtype=GRB.BINARY) for pos in PLF}
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-# flow to or from upper right neighbor
-fU = {pos: m.addVar(lb=-BOUND, ub=BOUND) for pos in PLFE}
-# flow to or from the lower right neighbour
-fD = {pos: m.addVar(lb=-BOUND, ub=BOUND) for pos in PLFE}
+        M, N = len(self.grid[0]), len(self.grid)
 
+        # set of squares including border
+        self.PLF = [(i, j) for i in range(-OFFSET, M + OFFSET)
+                    for j in range(-OFFSET, N + OFFSET)]
+        # set of squares including border
+        self.PLI = [pos for pos in self.PLF if in_bounds(pos, self.grid)]
+        # set of squares on even diagonals
+        self.PLFE = [(i, j) for (i, j) in self.PLF if ((i + j) % 2 == 0)]
+        # set of squares on even diagonals, not in the border
+        self.PLIE = [pos for pos in self.PLFE if in_bounds(pos, self.grid)]
+        # set of squares on odd diagonals, not in the border
+        self.PLIO = [(i, j) for (i, j) in self.PLI if ((i + j) % 2 == 1)]
 
-m.setObjective(quicksum(X[(d, *pos)]
-               for pos in PLIE for d in Directions), GRB.MAXIMIZE)
+        self.grid_with_border = add_border(self.grid, 3, self.entrance, 2)
 
-# (21) frame contains four street fields
-# edited to also count the last col and row
-m.addConstr(2 == quicksum(Y[pos]for pos in PLF)
-            - quicksum(Y[i, j] for i, j in PLI if i != M-1 and j != N-1))
+        self.BOUND = sum(1 - self.grid_with_border[i + OFFSET][j + OFFSET] for i, j in self.PLFE)
 
+        # VARIABLES
+        self.X = None
+        self.Y = None
+        self.fU = None
+        self.fD = None
 
-# no down parking in the last row and no right parking in the last col
-for (i, j) in PLIE:
-    if i == M-1:
-        m.addConstr(X[Directions.DOWN, i, j] == 0)
-    if j == N-1:
-        m.addConstr(X[Directions.RIGHT, i, j] == 0)
+        # CONSTRAINTS
 
-# (22) no parking fields in the frame
-m.addConstr(0 == quicksum(X[(d, *pos)] for pos in PLFE for d in Directions)
-            - quicksum(X[(d, *pos)] for pos in PLIE for d in Directions))
+    def set_variables(self):
+        self.X = {(direction, *pos): self.m.addVar(vtype=gp.GRB.BINARY)
+                  for pos in self.PLFE
+                  for direction in Directions}
+        self.Y = {pos: self.m.addVar(vtype=gp.GRB.BINARY) for pos in self.PLF}
 
-# (24) define entrance squares in border
-m.addConstr(quicksum(Y[i, e] for i in range(-2, 1)) == 3)
+        # flow to or from upper right neighbor
+        self.fU = {pos: self.m.addVar(lb=-self.BOUND, ub=self.BOUND) for pos in self.PLFE}
+        # flow to or from the lower right neighbour
+        self.fD = {pos: self.m.addVar(lb=-self.BOUND, ub=self.BOUND) for pos in self.PLFE}
 
-# (28 - 31) connect parking fields with driving lane
-for i, j in PLIE:
-    m.addConstr(X[Directions.LEFT, i, j]
-                <= Y[i-1, j-3] + Y[i, j-3] + Y[i-1, j+1] + Y[i, j+1])
-    m.addConstr(X[Directions.RIGHT, i, j]
-                <= Y[i-1, j-2] + Y[i, j-2] + Y[i-1, j+2] + Y[i, j+2])
-    m.addConstr(X[Directions.UP, i, j]
-                <= Y[i-3, j-1] + Y[i-3, j] + Y[i+1, j-1] + Y[i+1, j])
-    m.addConstr(X[Directions.DOWN, i, j]
-                <= Y[i-2, j-1] + Y[i-2, j] + Y[i+2, j-1] + Y[i+2, j])
+    def set_objective(self):
+        self.m.setObjective(gp.quicksum(self.X[(d, *pos)]
+                                        for pos in self.PLIE for d in Directions), gp.GRB.MAXIMIZE)
 
-# (32) single purpose for each square
-for i, j in PLIE:
-    m.addConstr(quicksum(X[d, i, j] for d in Directions)
-                + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
-                           for jj in (j-1, j))
-                + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
-# (33)
-for i, j in PLIO:
-    m.addConstr(X[Directions.RIGHT, i, j-1]
-                + X[Directions.LEFT, i, j+1]
-                + X[Directions.DOWN, i-1, j]
-                + X[Directions.UP, i+1, j]
-                + quicksum(0.25 * Y[ii, jj] for ii in (i-1, i)
-                           for jj in (j-1, j))
-                + PLLP_R2_GRID_WITH_BORDER[i + OFFSET][j + OFFSET] <= 1)
+    def set_constraints(self):
+        M, N = len(self.grid[0]), len(self.grid)
 
-# (34, 35)
-for i, j in PLFE:
-    m.addConstr(fD[i, j] <= BIGINT * Y[i, j])
-    m.addConstr(-fD[i, j] <= BIGINT * Y[i, j])
+        # (21) frame contains four street fields
+        # edited to also count the last col and row
+        self.m.addConstr(2 == gp.quicksum(self.Y[pos] for pos in self.PLF)
+                         - gp.quicksum(self.Y[i, j] for i, j in self.PLI if i != M - 1 and j != N - 1))
 
-    if i >= -2:
-        m.addConstr(fU[i, j] <= BIGINT * Y[i-1, j])
-        m.addConstr(-fU[i, j] <= BIGINT * Y[i-1, j])
+        # no down parking in the last row and no right parking in the last col
+        for (i, j) in self.PLIE:
+            if i == M - 1:
+                self.m.addConstr(self.X[Directions.DOWN, i, j] == 0)
+            if j == N - 1:
+                self.m.addConstr(self.X[Directions.RIGHT, i, j] == 0)
 
-# (36 - 39) connectivity of street fields by network flow
-for i, j in PLIE:
-    m.addConstr(fU[i, j] <= BIGINT * (Y[i-2, j] + Y[i-1, j+1]))
-    m.addConstr(fD[i, j] <= BIGINT * (Y[i+1, j] + Y[i, j+1]))
-    m.addConstr(-fU[i, j] <= BIGINT * (Y[i-1, j-1] + Y[i, j]))
-    m.addConstr(-fD[i, j] <= BIGINT * (Y[i-1, j] + Y[i, j-1]))
+        # (22) no parking fields in the frame
+        self.m.addConstr(0 == gp.quicksum(self.X[(d, *pos)] for pos in self.PLFE for d in Directions)
+                         - gp.quicksum(self.X[(d, *pos)] for pos in self.PLIE for d in Directions))
 
-# (40 - 43) directing flow to entrance and exit
-for i, j in PLIE:
-    m.addConstr(Y[i, j] <= fU[i, j] + fD[i, j] - fU[i+1, j-1] - fD[i-1, j-1])
-    m.addConstr(Y[i, j] <= fU[i+1, j+1] + fD[i+1, j+1] - fU[i+2, j] - fD[i, j])
+        # (24) define entrance squares in border
+        self.m.addConstr(gp.quicksum(self.Y[i, self.entrance] for i in range(-2, 1)) == 3)
 
-for i, j in PLIO:
-    m.addConstr(Y[i, j] <= fU[i, j+1] + fD[i, j+1] - fU[i+1, j] - fD[i-1, j])
-    m.addConstr(Y[i, j] <= fU[i+1, j] + fD[i+1, j] - fU[i+2, j-1] - fD[i, j-1])
+        # (28 - 31) connect parking fields with driving lane
+        for i, j in self.PLIE:
+            self.m.addConstr(self.X[Directions.LEFT, i, j]
+                             <= self.Y[i - 1, j - 3] + self.Y[i, j - 3] + self.Y[i - 1, j + 1] + self.Y[i, j + 1])
+            self.m.addConstr(self.X[Directions.RIGHT, i, j]
+                             <= self.Y[i - 1, j - 2] + self.Y[i, j - 2] + self.Y[i - 1, j + 2] + self.Y[i, j + 2])
+            self.m.addConstr(self.X[Directions.UP, i, j]
+                             <= self.Y[i - 3, j - 1] + self.Y[i - 3, j] + self.Y[i + 1, j - 1] + self.Y[i + 1, j])
+            self.m.addConstr(self.X[Directions.DOWN, i, j]
+                             <= self.Y[i - 2, j - 1] + self.Y[i - 2, j] + self.Y[i + 2, j - 1] + self.Y[i + 2, j])
 
+        # (32) single purpose for each square
+        for i, j in self.PLIE:
+            self.m.addConstr(gp.quicksum(self.X[d, i, j] for d in Directions)
+                             + gp.quicksum(0.25 * self.Y[ii, jj] for ii in (i - 1, i)
+                                           for jj in (j - 1, j))
+                             + self.grid_with_border[i + OFFSET][j + OFFSET] <= 1)
+        # (33)
+        for i, j in self.PLIO:
+            self.m.addConstr(self.X[Directions.RIGHT, i, j - 1]
+                             + self.X[Directions.LEFT, i, j + 1]
+                             + self.X[Directions.DOWN, i - 1, j]
+                             + self.X[Directions.UP, i + 1, j]
+                             + gp.quicksum(0.25 * self.Y[ii, jj] for ii in (i - 1, i)
+                                           for jj in (j - 1, j))
+                             + self.grid_with_border[i + OFFSET][j + OFFSET] <= 1)
 
-# result of r1 solution
-m.setParam("Cutoff", 38)
-# m.setParam("MIPFocus", 1)
-m.optimize()
-for i in range(M):
-    for j in range(N):
-        square = "."
-        if Y[i, j].x + Y[i, j-1].x + Y[i-1, j].x + Y[i-1, j-1].x > 0.9:
-            # street
-            square = "D"
-        elif (i, j) in PLIO and 0.9 < (X[Directions.RIGHT, i, j-1].x
-                                       + X[Directions.LEFT, i, j+1].x
-                                       + X[Directions.DOWN, i-1, j].x
-                                       + X[Directions.UP, i+1, j].x):
-            square = "P"
-        elif (i, j) in PLIE and sum(X[d, i, j].x for d in Directions) > 0.9:
-            square = "P"
-        print(square, end="")
-    print()
+        # (34, 35)
+        for i, j in self.PLFE:
+            self.m.addConstr(self.fD[i, j] <= BIGINT * self.Y[i, j])
+            self.m.addConstr(-self.fD[i, j] <= BIGINT * self.Y[i, j])
+
+            if i >= -2:
+                self.m.addConstr(self.fU[i, j] <= BIGINT * self.Y[i - 1, j])
+                self.m.addConstr(-self.fU[i, j] <= BIGINT * self.Y[i - 1, j])
+
+        # (36 - 39) connectivity of street fields by network flow
+        for i, j in self.PLIE:
+            self.m.addConstr(self.fU[i, j] <= BIGINT * (self.Y[i - 2, j] + self.Y[i - 1, j + 1]))
+            self.m.addConstr(self.fD[i, j] <= BIGINT * (self.Y[i + 1, j] + self.Y[i, j + 1]))
+            self.m.addConstr(-self.fU[i, j] <= BIGINT * (self.Y[i - 1, j - 1] + self.Y[i, j]))
+            self.m.addConstr(-self.fD[i, j] <= BIGINT * (self.Y[i - 1, j] + self.Y[i, j - 1]))
+
+        # (40 - 43) directing flow to entrance and exit
+        for i, j in self.PLIE:
+            self.m.addConstr(
+                self.Y[i, j] <= self.fU[i, j] + self.fD[i, j] - self.fU[i + 1, j - 1] - self.fD[i - 1, j - 1])
+            self.m.addConstr(
+                self.Y[i, j] <= self.fU[i + 1, j + 1] + self.fD[i + 1, j + 1] - self.fU[i + 2, j] - self.fD[i, j])
+
+        for i, j in self.PLIO:
+            self.m.addConstr(
+                self.Y[i, j] <= self.fU[i, j + 1] + self.fD[i, j + 1] - self.fU[i + 1, j] - self.fD[i - 1, j])
+            self.m.addConstr(
+                self.Y[i, j] <= self.fU[i + 1, j] + self.fD[i + 1, j] - self.fU[i + 2, j - 1] - self.fD[i, j - 1])
