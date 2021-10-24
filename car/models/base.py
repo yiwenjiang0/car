@@ -25,6 +25,9 @@ class BaseModel(ABC):
         self.set_objective()
         self.optimize()
 
+    def is_infeasible(self):
+        return self.m.Status == gp.GRB.INFEASIBLE
+
     def get_objective_value(self):
         return self.m.objVal
 
@@ -61,3 +64,12 @@ class BaseModel(ABC):
         :return:
         """
         ...
+
+    def set_time_limit(self, limit: int):
+        """
+        Set a time limit for the solve() method.
+
+        Params:
+            limit: the time limit given in seconds
+        """
+        self.m.setParam("TimeLimit", limit)

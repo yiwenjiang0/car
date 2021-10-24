@@ -9,4 +9,8 @@ def generate_grid(width: int, height: int, n_obstacles: int):
         row, col = obstacle // width, obstacle % width
         grid[row][col] = 1
 
-    return grid
+    entrance_choices = set(range(width))
+    entrance_choices -= set(obstacles)
+    entrance = np.random.choice(list(entrance_choices))
+
+    return grid, entrance

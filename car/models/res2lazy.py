@@ -1,4 +1,4 @@
-__all__ = []
+__all__ = ["ResTwoLazy"]
 
 import gurobipy as gp
 
@@ -56,6 +56,8 @@ class ResTwoLazy(BaseModel):
                        1 if (i, j) in d else 0
                    for i in range(M) for j in range(N) for d in self.D}
 
+        self.num_lazy = 0
+
         # VARIABLES
         self.X = None
         self.Y = None
@@ -106,6 +108,7 @@ class ResTwoLazy(BaseModel):
                 for d in region:
                     model.cbLazy(self.Y[d] <= gp.quicksum(self.Y[dd]
                                                           for dd in region_neighbors))
+                    self.num_lazy += 1
 
         self.m.optimize(callback)
 
@@ -120,11 +123,11 @@ class ResTwoLazy(BaseModel):
         rows, cols = range(len(self.grid)), range(len(self.grid[0]))
 
         self.entranceAccessible = self.m.addConstr(self.Y[self.entrance] == 1)
-
-        self.parkingFieldsNonOverlapping = {(i, j):
-            self.m.addConstr(
-                gp.quicksum(self._p[i, j, p] * self.X[p] for p in self.P) <= 1)
-            for i in rows for j in cols}
+        #
+        # self.parkingFieldsNonOverlapping = {(i, j):
+        #     self.m.addConstr(
+        #         gp.quicksum(self._p[i, j, p] * self.X[p] for p in self.P) <= 1)
+        #     for i in rows for j in cols}
 
         self.parkingFieldsAccessible = {p:
             self.m.addConstr(
@@ -179,3 +182,6 @@ class ResTwoLazy(BaseModel):
                     res2.remove(d)
 
         return list(res2)
+
+    def get_num_lazy(self):
+        return self.num_lazy

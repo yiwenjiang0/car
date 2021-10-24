@@ -11,7 +11,7 @@ PLLP_R1_GRID = [
     [0, 0, 0, 0, 0, 0, 0],
 ]
 
-PLLP_R1_GRID_WITH_BORDER = add_border(PLLP_R1_GRID, 1, 6, 1)
+PLLP_R1_GRID_WITH_BORDER = add_border(PLLP_R1_GRID, 1, 6)
 
 PLLP_R2_GRID = [
     [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
@@ -30,4 +30,4 @@ PLLP_R2_GRID = [
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ]
 
-PLLP_R2_GRID_WITH_BORDER = add_border(PLLP_R2_GRID, 3, 12, 2)
+PLLP_R2_GRID_WITH_BORDER = add_border(PLLP_R2_GRID, 3, 12)

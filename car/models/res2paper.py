@@ -1,19 +1,13 @@
-__all__ = []
+__all__ = ["ResTwoPaper"]
 
 import gurobipy as gp
 from car.models.base import BaseModel
 from enum import Enum, auto
 
-from car.utl.helpers import add_border
+from car.utl.helpers import add_border, in_bounds
 
 OFFSET = 3
 BIGINT = 10e4
-
-
-def in_bounds(position, grid):
-    M, N = len(grid[0]), len(grid)
-    i, j = position
-    return 0 <= i < M and 0 <= j < N
 
 
 class Directions(Enum):
@@ -42,7 +36,7 @@ class ResTwoPaper(BaseModel):
         # set of squares on odd diagonals, not in the border
         self.PLIO = [(i, j) for (i, j) in self.PLI if ((i + j) % 2 == 1)]
 
-        self.grid_with_border = add_border(self.grid, 3, self.entrance, 2)
+        self.grid_with_border = add_border(self.grid, 3, self.entrance)
 
         self.BOUND = sum(1 - self.grid_with_border[i + OFFSET][j + OFFSET] for i, j in self.PLFE)
 
