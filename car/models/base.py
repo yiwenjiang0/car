@@ -33,6 +33,9 @@ class BaseModel(ABC):
 
     def get_runtime(self):
         return self.m.Runtime
+    
+    def get_gap(self):
+        return self.m.MIPGap
 
     def optimize(self):
         self.m.optimize()
@@ -73,3 +76,12 @@ class BaseModel(ABC):
             limit: the time limit given in seconds
         """
         self.m.setParam("TimeLimit", limit)
+
+    def set_mip_gap(self, gap: int):
+        """
+        Set a MIP gap to halt optimization:
+
+        Params:
+            gap: the gap to halt at
+        """
+        self.m.setParam("MIPGap", gap)

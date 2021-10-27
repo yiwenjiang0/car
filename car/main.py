@@ -17,8 +17,8 @@ Path("./grids").mkdir(parents=True, exist_ok=True)
 
 grids = dict()
 
-for w, h in zip(range(5, 16, 5), range(5, 16, 5)):
-    for n_obstacles in range(0, 16, 5):
+for w, h in zip(range(3, 10, 3), range(3, 10, 3)):
+    for n_obstacles in range(0, 6, 5):
         current = None
         try:
             current = pickle.load(open(f"./grids/{w}x{h}x{n_obstacles}.p", "rb"))
@@ -38,7 +38,7 @@ MODELS = {
     "R2P": ResTwoPaper
 }
 
-df = pd.DataFrame(columns=["model", "width", "height", "n_obstacles", "obj", "runtime", "n_lazy"])
+df = pd.DataFrame(columns=["model", "width", "height", "n_obstacles", "obj", "runtime", "n_lazy", "gap", "is_infeasible"])
 for w, h, n_obstacles in grids:
     for model in MODELS:
         grid, entrance = grids[w, h, n_obstacles]
@@ -47,7 +47,7 @@ for w, h, n_obstacles in grids:
             entrance *= 2
 
         s = MODELS[model](model_name=f"{w}x{h}x{n_obstacles}_{model}", grid=grid, entrance=entrance)
-        s.set_time_limit(60)
+        s.set_time_limit(1800)
         print(model)
         s.solve()
         # solution = s.get_optimized_solution()
@@ -56,12 +56,17 @@ for w, h, n_obstacles in grids:
         objVal = None
         runtime = None
         n_lazy = None
+        gap = None
+        is_infeasible = False
 
         if not s.is_infeasible():
             objVal = s.get_objective_value()
             runtime = s.get_runtime()
+            gap = s.get_gap()
             if "L" in model:
                 n_lazy = s.get_num_lazy()
+        else:
+            is_infeasible ^= is_infeasible
 
         df = df.append({
             "model": model,
@@ -70,7 +75,9 @@ for w, h, n_obstacles in grids:
             "n_obstacles": n_obstacles,
             "obj": objVal,
             "runtime": runtime,
-            "n_lazy": n_lazy
+            "n_lazy": n_lazy,
+            "is_infeasible": is_infeasible,
+            "gap": gap
         }, ignore_index=True)
 
 df.to_csv("results.csv")
