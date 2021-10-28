@@ -92,7 +92,8 @@ class ResOneLazy(BaseModel):
     def set_constraints(self):
         rows, cols = range(len(self.grid)), range(len(self.grid[0]))
 
-        self.entranceAccessible = self.Y[0, self.entrance] + self.Y[1, self.entrance] == 2
+        self.entranceAccessible = self.m.addConstr(self.Y[0,
+                                                          self.entrance] == 1)
 
         self.connectParkingFields = {
             (i, j):

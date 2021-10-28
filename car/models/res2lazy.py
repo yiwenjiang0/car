@@ -12,10 +12,12 @@ def GenerateParkingFields(grid):
     M, N = len(grid), len(grid[0])
 
     P = []
-    for i in range(M - 1):
-        for j in range(N - 1):
-            P.append(((i, j), (i + 1, j)))
-            P.append(((i, j), (i, j + 1)))
+    for i in range(M):
+        for j in range(N):
+            if i < M-1:
+                P.append(((i, j), (i + 1, j)))
+            if j < N-1:
+                P.append(((i, j), (i, j + 1)))
     return P
 
 
@@ -30,7 +32,7 @@ def GenerateDrivingFields(grid, E):
 
             if j == E and i == 0:
                 e = current
-                
+
     print(E)
     return D, e
 
@@ -51,11 +53,11 @@ class ResTwoLazy(BaseModel):
         self.D, self.entrance = GenerateDrivingFields(self.grid, self.entrance)
 
         self._p = {(i, j, p):
-                       1 if (i, j) in p else 0
+                   1 if (i, j) in p else 0
                    for i in range(M) for j in range(N) for p in self.P}
 
         self._d = {(i, j, d):
-                       1 if (i, j) in d else 0
+                   1 if (i, j) in d else 0
                    for i in range(M) for j in range(N) for d in self.D}
 
         self.num_lazy = 0
@@ -132,16 +134,16 @@ class ResTwoLazy(BaseModel):
         #     for i in rows for j in cols}
 
         self.parkingFieldsAccessible = {p:
-            self.m.addConstr(
-                self.X[p] <= gp.quicksum(self.Y[d] for d in self._dneighborsp(p)))
-            for p in self.P}
+                                        self.m.addConstr(
+                                            self.X[p] <= gp.quicksum(self.Y[d] for d in self._dneighborsp(p)))
+                                        for p in self.P}
 
         self.singlePurpose = {(i, j):
-            self.m.addConstr(
-                gp.quicksum(self._p[i, j, p] * self.X[p] for p in self.P) +
-                gp.quicksum(0.25 * self._d[i, j, d] * self.Y[d] for d in self.D) +
-                self.grid[i][j] <= 1
-            )
+                              self.m.addConstr(
+            gp.quicksum(self._p[i, j, p] * self.X[p] for p in self.P) +
+            gp.quicksum(0.25 * self._d[i, j, d] * self.Y[d] for d in self.D) +
+            self.grid[i][j] <= 1
+        )
             for i in rows for j in cols
         }
 
@@ -150,7 +152,8 @@ class ResTwoLazy(BaseModel):
             for d in self.D}
 
     def set_objective(self):
-        self.m.setObjective(gp.quicksum(self.X[p] for p in self.P), gp.GRB.MAXIMIZE)
+        self.m.setObjective(gp.quicksum(
+            self.X[p] for p in self.P), gp.GRB.MAXIMIZE)
 
     def _dneighborsp(self, pfield):
         res = set()
