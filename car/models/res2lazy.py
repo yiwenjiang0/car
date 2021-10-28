@@ -30,6 +30,8 @@ def GenerateDrivingFields(grid, E):
 
             if j == E and i == 0:
                 e = current
+                
+    print(E)
     return D, e
 
 

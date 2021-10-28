@@ -14,6 +14,7 @@ class ResOnePaper(BaseModel):
         super().__init__(**kwargs)
 
         self.grid_with_border = add_border(self.grid, 1, 6)
+        self.entrance += 1
         self.grid_with_border[0][self.entrance] = 0
 
         # VARIABLES
