@@ -130,10 +130,16 @@ class ResOneLazy(BaseModel):
 
         for i in rows:
             for j in cols:
-                if self.Y[i, j].x > 0.9:
-                    result[i][j] = '3'
+                if result[i][j] == 1:
+                    result[i][j] = '#'
 
-                if self.X[i, j].x > 0.9:
-                    result[i][j] = '2'
+                elif self.Y[i, j].x > 0.9:
+                    result[i][j] = 'D'
+
+                elif self.X[i, j].x > 0.9:
+                    result[i][j] = 'P'
+                    
+                else:
+                    result[i][j] = '.'
 
         return result

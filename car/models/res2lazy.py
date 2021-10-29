@@ -190,3 +190,4 @@ class ResTwoLazy(BaseModel):
 
     def get_num_lazy(self):
         return self.num_lazy
+

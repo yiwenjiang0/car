@@ -8,7 +8,7 @@ from car.models.res2paper import ResTwoPaper
 print("Choose a model from\n"
       "[R1L] Resolution 1, Lazy\n"
       "[R1P] Resolution 1, Flow\n"
-      "[R2L] Resolution 2, Lazy\n"
+      "[R2L] Resolution 2, Lazy (WARNING: slow)\n"
       "[R2P] Resolution 2, Flow (WARNING: slow)"
       )
 
@@ -48,4 +48,14 @@ from pprint import pprint
 print("ORIGINAL GRID:")
 
 pprint(original_grid)
+print()
+try:
 
+    optimized_sol = model.get_optimized_solution()
+
+    print("OPTIMIZED GRID ('#' blocked, 'P' parking, 'D' driving)")
+    print()
+    pprint(optimized_sol)
+    
+except:
+    pass

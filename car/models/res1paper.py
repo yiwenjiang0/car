@@ -110,10 +110,16 @@ class ResOnePaper(BaseModel):
             for j in range(1, N - 1):
                 result[i - 1][j - 1] = self.grid_with_border[i][j]
 
-                if self.Y[i, j].x > 0.9:
-                    result[i - 1][j - 1] = '3'
+                if result[i-1][j-1] == 1:
+                    result[i-1][j-1] = "#"
 
-                if self.X[i, j].x > 0.9:
-                    result[i - 1][j - 1] = '2'
+                elif self.Y[i, j].x > 0.9:
+                    result[i - 1][j - 1] = 'P'
+
+                elif self.X[i, j].x > 0.9:
+                    result[i - 1][j - 1] = 'D'
+                    
+                else:
+                    result[i-1][j-1] = "."
 
         return result
