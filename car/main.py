@@ -17,7 +17,7 @@ Path("./grids").mkdir(parents=True, exist_ok=True)
 
 grids = dict()
 
-sizes = [3,4]
+sizes = [3,4,5,6,7,9]
 
 for w, h in zip(sizes, sizes):
     for n_obstacles in range(0, 6, 5):
