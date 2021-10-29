@@ -191,3 +191,19 @@ class ResTwoLazy(BaseModel):
     def get_num_lazy(self):
         return self.num_lazy
 
+    def get_optimized_solution(self):
+        import copy
+        
+        new_grid = copy.deepcopy(self.grid)
+        for p in self.P:
+            if self.X[p].x > 0.9:
+                for i, j in p:
+                    new_grid[i][j] = 'P'
+                    
+        for d in self.D:
+            if self.Y[d].x > 0.9:
+                for i, j in d:
+                    new_grid[i][j] = 'D'
+        
+        return new_grid
+    

@@ -8,7 +8,7 @@ from car.models.res2paper import ResTwoPaper
 print("Choose a model from\n"
       "[R1L] Resolution 1, Lazy\n"
       "[R1P] Resolution 1, Flow\n"
-      "[R2L] Resolution 2, Lazy (WARNING: slow)\n"
+      "[R2L] Resolution 2, Lazy (WARNING: slow on some hardware)\n"
       "[R2P] Resolution 2, Flow (WARNING: slow)"
       )
 
