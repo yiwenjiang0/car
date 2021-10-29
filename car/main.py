@@ -52,8 +52,8 @@ for w, h, n_obstacles in grids:
         s.set_time_limit(1800)
         print(model)
         s.solve()
-        solution = s.get_optimized_solution()
-        pickle.dump(solution, open(f"./solutions/{w}x{h}x{n_obstacles}_{model}.p", "wb"))
+        # solution = s.get_optimized_solution()
+        # pickle.dump(solution, open(f"./solutions/{w}x{h}x{n_obstacles}_{model}.p", "wb"))
 
         objVal = None
         runtime = None
